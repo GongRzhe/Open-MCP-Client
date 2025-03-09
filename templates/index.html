@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Chatbot</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .chat-container {
+            height: calc(100vh - 180px);
+            max-width: 1200px;
+            margin: 0 auto;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+        .chat-header {
+            background-color: #6c757d;
+            color: white;
+            padding: 15px;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .chat-body {
+            height: calc(100% - 130px);
+            background-color: white;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .chat-footer {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-top: 1px solid #dee2e6;
+        }
+        .message {
+            margin-bottom: 15px;
+            max-width: 80%;
+        }
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 18px 18px 0 18px;
+            margin-left: auto;
+            text-align: right;
+        }
+        .bot-message {
+            background-color: #e9ecef;
+            color: #212529;
+            padding: 10px 15px;
+            border-radius: 18px 18px 18px 0;
+            margin-right: auto;
+        }
+        .system-message {
+            background-color: #ffc107;
+            color: #212529;
+            padding: 10px 15px;
+            border-radius: 18px;
+            margin: 10px auto;
+            text-align: center;
+            max-width: 90%;
+        }
+        .tool-result {
+            background-color: #f1f8ff;
+            border-left: 4px solid #0366d6;
+            padding: 10px 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        #message-input {
+            border-radius: 20px;
+            padding-left: 15px;
+        }
+        #send-button {
+            border-radius: 20px;
+        }
+        .loading {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        .loading-dots {
+            display: flex;
+        }
+        .loading-dots div {
+            width: 10px;
+            height: 10px;
+            margin: 0 5px;
+            background-color: #6c757d;
+            border-radius: 50%;
+            animation: dot-flashing 1s infinite alternate;
+        }
+        .loading-dots div:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .loading-dots div:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes dot-flashing {
+            0% {
+                background-color: #6c757d;
+            }
+            50%, 100% {
+                background-color: #e9ecef;
+            }
+        }
+        .sidebar {
+            background-color: #343a40;
+            color: white;
+            height: 100%;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .sidebar h5 {
+            color: #adb5bd;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 20px;
+        }
+        .provider-item {
+            padding: 8px 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .provider-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .provider-item.active {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+        .model-item {
+            padding: 5px 10px 5px 20px;
+            margin: 2px 0;
+            border-radius: 3px;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+        .model-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .model-item.active {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-healthy {
+            background-color: #28a745;
+        }
+        .status-unhealthy {
+            background-color: #dc3545;
+        }
+        code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            color: #e83e8c;
+        }
+        .json-output {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .badge-tool {
+            background-color: #17a2b8;
+            color: white;
+            font-size: 0.75em;
+            padding: 3px 8px;
+            border-radius: 10px;
+            margin-left: 5px;
+        }
+        /* For markdown rendering */
+        .markdown-content pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .markdown-content code {
+            color: #e83e8c;
+        }
+        .markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        .markdown-content th, .markdown-content td {
+            border: 1px solid #dee2e6;
+            padding: 8px;
+        }
+        .markdown-content th {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark mb-3">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-chat-dots-fill me-2"></i>
+                MCP Chatbot
+            </a>
+            <div class="d-flex align-items-center">
+                <span class="badge bg-primary me-2" id="current-provider">-</span>
+                <span class="badge bg-secondary" id="current-model">-</span>
+                <button class="btn btn-sm btn-outline-light ms-3" data-bs-toggle="modal" data-bs-target="#helpModal">
+                    <i class="bi bi-question-circle"></i> Help
+                </button>
+                <button class="btn btn-sm btn-outline-light ms-2" id="refresh-btn">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mb-4">
+        <div class="row">
+            <!-- Chat Area -->
+            <div class="col-md-9">
+                <div class="chat-container">
+                    <div class="chat-header d-flex justify-content-between align-items-center">
+                        <div>
+                            Chat Session
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-light" id="clear-chat">
+                                <i class="bi bi-trash"></i> Clear Chat
+                            </button>
+                        </div>
+                    </div>
+                    <div class="chat-body" id="chat-messages">
+                        <div class="message system-message">Welcome to MCP Chatbot. Type your message below or try a command like <code>/help</code> to get started.</div>
+                    </div>
+                    <div class="chat-footer">
+                        <form id="message-form">
+                            <div class="input-group">
+                                <input type="text" id="message-input" class="form-control" placeholder="Type a message or command (/help, /llm, etc.)">
+                                <button type="submit" id="send-button" class="btn btn-primary">
+                                    <i class="bi bi-send-fill"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Sidebar -->
+            <div class="col-md-3">
+                <div class="sidebar rounded">
+                    <h4><i class="bi bi-gear"></i> Settings</h4>
+                    
+                    <h5><i class="bi bi-cpu"></i> LLM Providers</h5>
+                    <div id="providers-list">
+                        <div class="text-center my-3">
+                            <div class="spinner-border spinner-border-sm text-light" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            Loading providers...
+                        </div>
+                    </div>
+                    
+                    <h5><i class="bi bi-tools"></i> Available Tools</h5>
+                    <div id="tools-list">
+                        <div class="text-center my-3">
+                            <div class="spinner-border spinner-border-sm text-light" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            Loading tools...
+                        </div>
+                    </div>
+                    
+                    <h5><i class="bi bi-server"></i> Server Status</h5>
+                    <div id="server-status">
+                        <div class="text-center my-3">
+                            <div class="spinner-border spinner-border-sm text-light" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            Loading status...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="helpModalLabel">MCP Chatbot Help</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <h5>Available Commands</h5>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Command</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>/help</code></td>
+                                <td>Show this help information</td>
+                            </tr>
+                            <tr>
+                                <td><code>/llm</code></td>
+                                <td>Show available LLM providers and models</td>
+                            </tr>
+                            <tr>
+                                <td><code>/switch &lt;provider&gt; &lt;model&gt;</code></td>
+                                <td>Switch to a different LLM provider and model</td>
+                            </tr>
+                            <tr>
+                                <td><code>/refresh</code></td>
+                                <td>Refresh model lists for all providers</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h5 class="mt-4">About Tools</h5>
+                    <p>This chatbot can use various tools to help answer your questions. The AI will automatically use the appropriate tool when needed.</p>
+                    
+                    <h5 class="mt-4">LLM Providers</h5>
+                    <p>You can switch between different AI providers (like OpenAI, Anthropic, etc.) and their models. Use the sidebar to see available providers and select a different one.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.3.3/dist/purify.min.js"></script>
+
+    <script>
+        // Session management
+        const sessionId = 'default';
+        let isProcessing = false;
+
+        // Initialize session on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            await initSession();
+            await refreshStatus();
+            await refreshTools();
+        });
+
+        async function initSession() {
+            try {
+                const response = await fetch('/api/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to initialize session');
+                }
+                
+                const data = await response.json();
+                console.log('Session initialized:', data);
+                
+                // Show system ready message
+                addSystemMessage('Session initialized. Ready to chat!');
+            } catch (error) {
+                console.error('Error initializing session:', error);
+                addSystemMessage('Error initializing session. Please refresh the page.', true);
+            }
+        }
+
+        // Chat message handling
+        document.getElementById('message-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (isProcessing) return;
+            
+            const messageInput = document.getElementById('message-input');
+            const userMessage = messageInput.value.trim();
+            
+            if (!userMessage) return;
+            
+            // Clear input
+            messageInput.value = '';
+            
+            // Add user message to chat
+            addUserMessage(userMessage);
+            
+            // Show typing indicator
+            showTypingIndicator();
+            
+            isProcessing = true;
+            
+            try {
+                // Send message to backend
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        message: userMessage
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to send message');
+                }
+                
+                const data = await response.json();
+                
+                // Remove typing indicator
+                hideTypingIndicator();
+                
+                // Handle command results
+                if (data.command_result === true) {
+                    handleCommandResult(data);
+                    isProcessing = false;
+                    return;
+                }
+                
+                // Handle tool results if present
+                if (data.tool_result) {
+                    addAssistantMessage(data.initial_response);
+                    addToolResult(data.tool_result);
+                }
+                
+                // Add assistant response
+                addAssistantMessage(data.response);
+                
+                // Refresh status after interaction
+                refreshStatus();
+            } catch (error) {
+                console.error('Error sending message:', error);
+                hideTypingIndicator();
+                addSystemMessage('Error sending message. Please try again.', true);
+            } finally {
+                isProcessing = false;
+            }
+        });
+
+        // Sidebar refresh button
+        document.getElementById('refresh-btn').addEventListener('click', async () => {
+            try {
+                // Show system message about refresh
+                addSystemMessage('Refreshing model lists and status...');
+                
+                // Send refresh command
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        message: '/refresh'
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to refresh');
+                }
+                
+                const data = await response.json();
+                
+                // Refresh UI
+                refreshStatus();
+                
+                // Show success message
+                addSystemMessage('Refresh complete!');
+            } catch (error) {
+                console.error('Error refreshing:', error);
+                addSystemMessage('Error refreshing. Please try again.', true);
+            }
+        });
+
+        // Clear chat button
+        document.getElementById('clear-chat').addEventListener('click', () => {
+            const chatMessages = document.getElementById('chat-messages');
+            chatMessages.innerHTML = '';
+            addSystemMessage('Chat cleared');
+        });
+
+        // Handle command results
+        function handleCommandResult(data) {
+            switch (data.command) {
+                case 'llm':
+                    let providersHtml = '<h4>Available LLM Providers</h4>';
+                    
+                    for (const [providerName, info] of Object.entries(data.providers)) {
+                        const isActive = info.is_current;
+                        const hasKey = info.has_api_key;
+                        
+                        providersHtml += `
+                            <div class="provider-section mb-3">
+                                <div class="provider-header">
+                                    <span class="status-indicator ${hasKey ? 'status-healthy' : 'status-unhealthy'}"></span>
+                                    <strong>${providerName.toUpperCase()}</strong>
+                                    ${isActive ? '<span class="badge bg-primary ms-2">Current</span>' : ''}
+                                    ${!hasKey ? '<span class="badge bg-warning text-dark ms-2">No API Key</span>' : ''}
+                                </div>
+                                <div class="models-list ms-3 mt-2">
+                                    <strong>Models:</strong>
+                                    <ul class="list-unstyled">
+                        `;
+                        
+                        for (const model of info.models.slice(0, 5)) {
+                            const isCurrentModel = isActive && model === data.current_model;
+                            providersHtml += `
+                                <li class="model-item ${isCurrentModel ? 'bg-primary bg-opacity-25' : ''}">
+                                    ${model}
+                                    ${isCurrentModel ? '<span class="badge bg-primary ms-2">Current</span>' : ''}
+                                </li>
+                            `;
+                        }
+                        
+                        const remaining = info.models.length - 5;
+                        if (remaining > 0) {
+                            providersHtml += `<li class="text-muted font-italic">...and ${remaining} more</li>`;
+                        }
+                        
+                        providersHtml += `
+                                    </ul>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    addSystemMessage(providersHtml);
+                    break;
+                    
+                case 'switch':
+                    if (data.command_result) {
+                        addSystemMessage(`Switched to ${data.provider.toUpperCase()} with model ${data.model}`);
+                        refreshStatus();
+                    } else {
+                        addSystemMessage(`Error: ${data.error}`, true);
+                    }
+                    break;
+                    
+                case 'refresh':
+                    addSystemMessage('Model lists refreshed successfully');
+                    refreshStatus();
+                    break;
+                    
+                case 'help':
+                    let helpHtml = '<h4>Available Commands</h4><ul>';
+                    for (const [cmd, desc] of Object.entries(data.commands)) {
+                        helpHtml += `<li><code>${cmd}</code> - ${desc}</li>`;
+                    }
+                    helpHtml += '</ul>';
+                    addSystemMessage(helpHtml);
+                    break;
+                    
+                default:
+                    if (!data.command_result) {
+                        addSystemMessage(`Error: ${data.error}`, true);
+                    }
+            }
+        }
+
+        // UI Helper functions
+        function addUserMessage(message) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user-message';
+            messageDiv.textContent = message;
+            chatMessages.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function addAssistantMessage(message) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message markdown-content';
+            
+            // Sanitize and render markdown
+            const renderedContent = DOMPurify.sanitize(marked.parse(message));
+            messageDiv.innerHTML = renderedContent;
+            
+            chatMessages.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function addSystemMessage(message, isError = false) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message system-message ${isError ? 'bg-danger text-white' : ''}`;
+            
+            // Check if message is HTML
+            if (message.includes('<') && message.includes('>')) {
+                // Sanitize HTML
+                messageDiv.innerHTML = DOMPurify.sanitize(message);
+            } else {
+                messageDiv.textContent = message;
+            }
+            
+            chatMessages.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function addToolResult(result) {
+            const chatMessages = document.getElementById('chat-messages');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'tool-result';
+            
+            // Format result based on type
+            let formattedResult = '';
+            if (typeof result === 'object') {
+                formattedResult = JSON.stringify(result, null, 2);
+            } else {
+                formattedResult = String(result);
+            }
+            
+            resultDiv.textContent = formattedResult;
+            
+            const wrapperDiv = document.createElement('div');
+            wrapperDiv.className = 'message';
+            wrapperDiv.appendChild(document.createElement('div').appendChild(
+                document.createTextNode('Tool Execution Result:')
+            ));
+            wrapperDiv.appendChild(resultDiv);
+            
+            chatMessages.appendChild(wrapperDiv);
+            scrollToBottom();
+        }
+
+        function showTypingIndicator() {
+            const chatMessages = document.getElementById('chat-messages');
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading';
+            loadingDiv.id = 'typing-indicator';
+            
+            loadingDiv.innerHTML = `
+                <div class="message bot-message" style="background-color: #e9ecef; padding: 8px 15px; border-radius: 18px;">
+                    <div class="loading-dots">
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                    </div>
+                </div>
+            `;
+            
+            chatMessages.appendChild(loadingDiv);
+            scrollToBottom();
+        }
+
+        function hideTypingIndicator() {
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+
+        function scrollToBottom() {
+            const chatMessages = document.getElementById('chat-messages');
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Sidebar data refresh functions
+        async function refreshStatus() {
+            try {
+                const response = await fetch('/api/status');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch status');
+                }
+                
+                const data = await response.json();
+                
+                // Update current provider and model in header
+                document.getElementById('current-provider').textContent = data.llm.provider.toUpperCase();
+                document.getElementById('current-model').textContent = data.llm.model;
+                
+                // Update providers list
+                const providersListEl = document.getElementById('providers-list');
+                let providersHtml = '';
+                
+                Object.entries(data.llm.provider_health).forEach(([provider, info]) => {
+                    providersHtml += `
+                        <div class="provider-item ${info.is_current ? 'active' : ''}">
+                            <div>
+                                <span class="status-indicator ${info.healthy ? 'status-healthy' : 'status-unhealthy'}"></span>
+                                ${provider.toUpperCase()}
+                                ${info.is_current ? '<span class="badge bg-primary ms-1">Current</span>' : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                providersListEl.innerHTML = providersHtml;
+                
+                // Update server status
+                const serverStatusEl = document.getElementById('server-status');
+                let serversHtml = '';
+                
+                Object.entries(data.servers).forEach(([server, status]) => {
+                    const isConnected = status.state === 'connected';
+                    
+                    serversHtml += `
+                        <div class="mb-2">
+                            <div>
+                                <span class="status-indicator ${isConnected ? 'status-healthy' : 'status-unhealthy'}"></span>
+                                ${server}
+                            </div>
+                            <div class="small text-muted ms-3">
+                                Status: ${status.state}
+                                <br>Tools: ${status.tool_count}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                serverStatusEl.innerHTML = serversHtml;
+                
+                // Add event listeners to provider items
+                document.querySelectorAll('.provider-item').forEach(item => {
+                    item.addEventListener('click', async (e) => {
+                        const providerEl = e.currentTarget;
+                        const providerName = providerEl.textContent.trim().toLowerCase().split(' ')[0];
+                        
+                        // Get available models for this provider
+                        try {
+                            const llmResponse = await fetch('/api/chat', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    session_id: sessionId,
+                                    message: '/llm'
+                                })
+                            });
+                            
+                            if (!llmResponse.ok) {
+                                throw new Error('Failed to get models');
+                            }
+                            
+                            const llmData = await llmResponse.json();
+                            const providerInfo = llmData.providers[providerName];
+                            
+                            if (!providerInfo) {
+                                throw new Error('Provider not found');
+                            }
+                            
+                            if (!providerInfo.has_api_key && providerName !== 'ollama') {
+                                addSystemMessage(`API key for ${providerName.toUpperCase()} is not configured. Please add it to your .env file.`, true);
+                                return;
+                            }
+                            
+                            // Show model selection dialog
+                            let modelHtml = `<h4>Select a model for ${providerName.toUpperCase()}</h4><div class="list-group">`;
+                            
+                            for (const model of providerInfo.models.slice(0, 10)) {
+                                modelHtml += `
+                                    <button type="button" class="list-group-item list-group-item-action model-select-item"
+                                            data-provider="${providerName}" data-model="${model}">
+                                        ${model}
+                                    </button>
+                                `;
+                            }
+                            
+                            modelHtml += `</div>`;
+                            
+                            addSystemMessage(modelHtml);
+                            
+                            // Add event listeners to model selection items
+                            document.querySelectorAll('.model-select-item').forEach(modelItem => {
+                                modelItem.addEventListener('click', async (e) => {
+                                    const modelEl = e.currentTarget;
+                                    const provider = modelEl.dataset.provider;
+                                    const model = modelEl.dataset.model;
+                                    
+                                    // Switch to selected provider and model
+                                    addSystemMessage(`Switching to ${provider.toUpperCase()} with model ${model}...`);
+                                    
+                                    try {
+                                        const switchResponse = await fetch('/api/chat', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                session_id: sessionId,
+                                                message: `/switch ${provider} ${model}`
+                                            })
+                                        });
+                                        
+                                        if (!switchResponse.ok) {
+                                            throw new Error('Failed to switch provider');
+                                        }
+                                        
+                                        const switchData = await switchResponse.json();
+                                        
+                                        if (switchData.command_result) {
+                                            addSystemMessage(`Successfully switched to ${switchData.provider.toUpperCase()} with model ${switchData.model}`);
+                                            refreshStatus();
+                                        } else {
+                                            addSystemMessage(`Error: ${switchData.error}`, true);
+                                        }
+                                    } catch (error) {
+                                        console.error('Error switching provider:', error);
+                                        addSystemMessage('Error switching provider. Please try again.', true);
+                                    }
+                                });
+                            });
+                        } catch (error) {
+                            console.error('Error fetching models:', error);
+                            addSystemMessage('Error fetching models. Please try again.', true);
+                        }
+                    });
+                });
+                
+            } catch (error) {
+                console.error('Error refreshing status:', error);
+                
+                // Show error in sidebar sections
+                document.getElementById('providers-list').innerHTML = '<div class="text-danger">Error loading providers</div>';
+                document.getElementById('server-status').innerHTML = '<div class="text-danger">Error loading server status</div>';
+            }
+        }
+
+        async function refreshTools() {
+            try {
+                const response = await fetch('/api/tools');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch tools');
+                }
+                
+                const data = await response.json();
+                
+                // Update tools list
+                const toolsListEl = document.getElementById('tools-list');
+                
+                if (data.tools.length === 0) {
+                    toolsListEl.innerHTML = '<div class="text-muted">No tools available</div>';
+                    return;
+                }
+                
+                let toolsHtml = '';
+                
+                // Group tools by server
+                const toolsByServer = {};
+                data.tools.forEach(tool => {
+                    if (!toolsByServer[tool.server]) {
+                        toolsByServer[tool.server] = [];
+                    }
+                    toolsByServer[tool.server].push(tool);
+                });
+                
+                // Generate HTML for each server's tools
+                Object.entries(toolsByServer).forEach(([server, tools]) => {
+                    toolsHtml += `
+                        <div class="mb-3">
+                            <div class="small text-muted mb-1">${server}</div>
+                            <ul class="list-unstyled ms-2">
+                    `;
+                    
+                    tools.forEach(tool => {
+                        toolsHtml += `
+                            <li title="${tool.description}">
+                                <i class="bi bi-tools me-1"></i>
+                                ${tool.name}
+                            </li>
+                        `;
+                    });
+                    
+                    toolsHtml += `</ul></div>`;
+                });
+                
+                toolsListEl.innerHTML = toolsHtml;
+                
+            } catch (error) {
+                console.error('Error refreshing tools:', error);
+                document.getElementById('tools-list').innerHTML = '<div class="text-danger">Error loading tools</div>';
+            }
+        }
+    </script>
+</body>
+</html>
