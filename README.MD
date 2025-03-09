@@ -38,6 +38,11 @@ ChatMCP is a powerful command-line chat interface that connects to multiple LLM 
    # Edit .env with your API keys
    ```
 
+4. Copy the example servers_config file and add your mcp servers:
+   ```bash
+   cp servers_config.json.example servers_config.json
+   ```
+
 ### Configuration
 
 1. **Environment Variables**: Edit the `.env` file with your API keys and preferences:
