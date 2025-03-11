@@ -23,7 +23,7 @@ ChatMCP is a powerful command-line chat interface that connects to multiple LLM 
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/chatmcp.git
+   git clone https://github.com/GongRzhe/ChatMCP.git
    cd chatmcp
    ```
 
