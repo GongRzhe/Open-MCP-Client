@@ -1,6 +1,6 @@
-# ChatMCP - Multi-Provider LLM Chat Client with Tool Integration
+# Open-MCP-Client - Multi-Provider LLM Chat Client with Tool Integration
 
-ChatMCP is a powerful command-line chat interface that connects to multiple LLM providers (OpenAI, Anthropic, Groq, etc.) and extends their capabilities with tools using the Model Context Protocol (MCP).
+Open-MCP-Client is a powerful command-line chat interface that connects to multiple LLM providers (OpenAI, Anthropic, Groq, etc.) and extends their capabilities with tools using the Model Context Protocol (MCP).
 
 ## Features
 
@@ -23,8 +23,8 @@ ChatMCP is a powerful command-line chat interface that connects to multiple LLM 
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/GongRzhe/ChatMCP.git
-   cd chatmcp
+   git clone https://github.com/GongRzhe/Open-MCP-Client.git
+   cd Open-MCP-Client
    ```
 
 2. Install the required packages:
