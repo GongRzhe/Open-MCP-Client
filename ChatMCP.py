@@ -172,6 +172,7 @@ class Configuration:
         self.retry_max_delay = self._safe_parse_float("RETRY_MAX_DELAY", 30.0)
         self.health_check_interval = self._safe_parse_int("HEALTH_CHECK_INTERVAL", 60)
         self.message_history_limit = self._safe_parse_int("MESSAGE_HISTORY_LIMIT", 20)
+        self.server_init_timeout = self._safe_parse_int("SERVER_INIT_TIMEOUT", 30)  # 30 seconds default
 
     def _safe_parse_int(self, env_var: str, default: int) -> int:
         """Safely parse an integer environment variable.
@@ -353,6 +354,8 @@ class Server:
         self.max_consecutive_failures: int = 3
         self.reconnect_delay: float = 5.0
         self.tools: List[Any] = []
+        self.resources: List[Any] = []  # Added to cache resources
+        self.prompts: List[Any] = []    # Added to cache prompts
         self.circuit_breaker = CircuitBreaker()
         self.retry_handler = AsyncRetry(
             max_retries=global_config.max_retries,
@@ -361,8 +364,138 @@ class Server:
         )
         self._health_check_task: Optional[asyncio.Task] = None
 
+    async def list_resources(self) -> List[Any]:
+        """List available resources from the server with reconnection logic.
+        
+        Returns:
+            A list of available resources.
+        """
+        # If disconnected, try to reconnect
+        if self.state != ServerState.CONNECTED:
+            if time.time() - self.last_connection_attempt > self.reconnect_delay:
+                reconnected = await self.initialize()
+                if not reconnected:
+                    return []
+            else:
+                return []
+        
+        # Return cached resources list to avoid frequent server calls
+        return self.resources
+
+    async def list_prompts(self) -> List[Any]:
+        """List available prompts from the server with reconnection logic.
+        
+        Returns:
+            A list of available prompts.
+        """
+        # If disconnected, try to reconnect
+        if self.state != ServerState.CONNECTED:
+            if time.time() - self.last_connection_attempt > self.reconnect_delay:
+                reconnected = await self.initialize()
+                if not reconnected:
+                    return []
+            else:
+                return []
+        
+        # Return cached prompts list to avoid frequent server calls
+        return self.prompts
+
+    async def read_resource(self, uri: str) -> Any:
+        """Read a resource by URI with retry logic.
+        
+        Args:
+            uri: The URI of the resource to read.
+            
+        Returns:
+            Resource content.
+            
+        Raises:
+            RuntimeError: If resource reading fails.
+        """
+        # If not connected, try to reconnect
+        if self.state != ServerState.CONNECTED:
+            reconnected = await self.initialize()
+            if not reconnected:
+                raise RuntimeError(f"Cannot read resource: server {self.name} is not connected")
+        
+        # Use circuit breaker pattern to prevent cascading failures
+        try:
+            return await self.circuit_breaker.execute(
+                lambda: self.retry_handler.execute(self._read_resource_internal, uri)
+            )
+        except Exception as e:
+            logging.error(f"Failed to read resource {uri} after retries: {e}")
+            self.state = ServerState.FAILED
+            await self.cleanup()
+            self.last_connection_attempt = time.time()
+            raise RuntimeError(f"Resource reading failed: {str(e)}")
+
+    async def _read_resource_internal(self, uri: str) -> Any:
+        """Internal resource reading function wrapped by retry handler.
+        
+        Args:
+            uri: The URI of the resource to read.
+            
+        Returns:
+            Resource content.
+        """
+        if not self.session:
+            raise RuntimeError(f"Server {self.name} not initialized")
+        
+        logging.info(f"Reading resource {uri}...")
+        result = await self.session.read_resource(uri)
+        return result
+
+    async def get_prompt(self, name: str, arguments: Dict[str, Any] = None) -> Any:
+        """Get a prompt template with optional arguments.
+        
+        Args:
+            name: The name of the prompt.
+            arguments: Optional arguments for the prompt.
+            
+        Returns:
+            Prompt result with messages.
+            
+        Raises:
+            RuntimeError: If prompt execution fails.
+        """
+        # If not connected, try to reconnect
+        if self.state != ServerState.CONNECTED:
+            reconnected = await self.initialize()
+            if not reconnected:
+                raise RuntimeError(f"Cannot get prompt: server {self.name} is not connected")
+        
+        # Use circuit breaker pattern to prevent cascading failures
+        try:
+            return await self.circuit_breaker.execute(
+                lambda: self.retry_handler.execute(self._get_prompt_internal, name, arguments or {})
+            )
+        except Exception as e:
+            logging.error(f"Failed to get prompt {name} after retries: {e}")
+            self.state = ServerState.FAILED
+            await self.cleanup()
+            self.last_connection_attempt = time.time()
+            raise RuntimeError(f"Prompt execution failed: {str(e)}")
+
+    async def _get_prompt_internal(self, name: str, arguments: Dict[str, Any]) -> Any:
+        """Internal prompt execution function wrapped by retry handler.
+        
+        Args:
+            name: The name of the prompt.
+            arguments: Arguments for the prompt.
+            
+        Returns:
+            Prompt result with messages.
+        """
+        if not self.session:
+            raise RuntimeError(f"Server {self.name} not initialized")
+        
+        logging.info(f"Getting prompt {name}...")
+        result = await self.session.get_prompt(name, arguments)
+        return result
+    
     async def initialize(self) -> bool:
-        """Initialize the server connection with reconnection logic.
+        """Initialize the server connection with reconnection logic and timeout.
         
         Returns:
             bool: True if connection succeeded, False otherwise
@@ -370,7 +503,7 @@ class Server:
         if self.state == ServerState.CONNECTING:
             logging.info(f"Server {self.name} already connecting, waiting...")
             return False
-            
+                
         self.state = ServerState.CONNECTING
         self.last_connection_attempt = time.time()
         
@@ -378,13 +511,18 @@ class Server:
             command=shutil.which("npx") if self.config['command'] == "npx" else self.config['command'],
             args=self.config['args'],
             env={**os.environ, **self.config['env']} if self.config.get('env') else None,
-            stdout=subprocess.DEVNULL,  # Add this line
-            stderr=subprocess.DEVNULL   # Add this line
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
         )
         
         try:
-            # Use circuit breaker pattern for initialization - FIXED: proper lambda
-            await self.circuit_breaker.execute(lambda: self._initialize_internal(server_params))
+            # Use circuit breaker pattern for initialization with timeout
+            init_task = asyncio.create_task(
+                self.circuit_breaker.execute(lambda: self._initialize_internal(server_params))
+            )
+            
+            # Add timeout
+            await asyncio.wait_for(init_task, timeout=self.global_config.server_init_timeout)
             
             # Connection successful, reset failure counter
             self.connection_failures = 0
@@ -394,7 +532,13 @@ class Server:
             self._start_health_check()
             
             return True
-            
+                
+        except asyncio.TimeoutError:
+            logging.error(f"Timeout initializing server {self.name} after {self.global_config.server_init_timeout} seconds")
+            self.connection_failures += 1
+            self.state = ServerState.FAILED
+            await self.cleanup()
+            return False
         except Exception as e:
             self.connection_failures += 1
             logging.error(f"Error initializing server {self.name}: {e}")
@@ -420,11 +564,12 @@ class Server:
         await self._update_tools()
 
     async def _update_tools(self) -> None:
-        """Update the list of available tools from the server."""
+        """Update the list of available tools, resources, and prompts from the server."""
         if not self.session:
             return
             
         try:
+            # Fetch and cache tools
             tools_response = await self.session.list_tools()
             self.tools = []
             
@@ -442,6 +587,33 @@ class Server:
                         self.tools.append(Tool(tool.name, tool.description, tool.inputSchema))
                         if supports_progress:
                             logging.info(f"Tool '{tool.name}' will support progress tracking")
+            
+            # Check if the server supports resources capability and fetch them
+            if self.capabilities and 'resources' in self.capabilities:
+                logging.info(f"Server {self.name} supports resources")
+                try:
+                    resources_response = await self.session.list_resources()
+                    self.resources = []
+                    if hasattr(resources_response, 'resources'):
+                        self.resources = resources_response.resources
+                    elif isinstance(resources_response, tuple) and resources_response[0] == 'resources':
+                        self.resources = resources_response[1]
+                    logging.info(f"Cached {len(self.resources)} resources from server {self.name}")
+                except Exception as e:
+                    logging.error(f"Error fetching resources from server {self.name}: {e}")
+            
+            # Check if the server supports prompts capability and fetch them
+            if self.capabilities and 'prompts' in self.capabilities:
+                logging.info(f"Server {self.name} supports prompts")
+                try:
+                    prompts_response = await self.session.list_prompts()
+                    self.prompts = []
+                    if hasattr(prompts_response, 'prompts'):
+                        self.prompts = prompts_response.prompts
+                    logging.info(f"Cached {len(self.prompts)} prompts from server {self.name}")
+                except Exception as e:
+                    logging.error(f"Error fetching prompts from server {self.name}: {e}")
+                
         except Exception as e:
             logging.error(f"Error updating tools for server {self.name}: {e}")
 
@@ -1884,6 +2056,239 @@ class ChatSession:
         self._model_refresh_task: Optional[asyncio.Task] = None
         self._max_history_length: int = llm_client.config.message_history_limit
 
+
+    async def list_resources(self) -> List[Dict[str, str]]:
+        """List available resources from all servers with reconnection logic.
+        
+        Returns:
+            A list of resources with their metadata.
+        """
+        all_resources = []
+        for server in self.servers:
+            try:
+                if server.state != ServerState.CONNECTED:
+                    reconnected = await server.initialize()
+                    if not reconnected:
+                        continue
+                        
+                resources = await server.session.list_resources()
+                if resources:
+                    all_resources.extend(resources)
+                    
+            except Exception as e:
+                logging.error(f"Error listing resources from server {server.name}: {e}")
+
+                
+        return all_resources
+
+    async def list_prompts(self) -> List[Dict[str, Any]]:
+        """List available prompts from all servers with reconnection logic.
+        
+        Returns:
+            A list of available prompts with their metadata.
+        """
+        all_prompts = []
+        for server in self.servers:
+            try:
+                if server.state != ServerState.CONNECTED:
+                    reconnected = await server.initialize()
+                    if not reconnected:
+                        continue
+                        
+                prompts = await server.session.list_prompts()
+                if prompts:
+                    all_prompts.extend(prompts)
+                    
+            except Exception as e:
+                logging.error(f"Error listing prompts from server {server.name}: {e}")
+                
+        return all_prompts
+
+    async def read_resource(self, uri: str) -> Dict[str, Any]:
+        """Read a resource from its URI.
+        
+        Args:
+            uri: The URI of the resource to read.
+            
+        Returns:
+            The content of the resource.
+            
+        Raises:
+            RuntimeError: If resource reading fails.
+        """
+        for server in self.servers:
+            if server.state != ServerState.CONNECTED:
+                continue
+                
+            try:
+                result = await server.session.read_resource(uri)
+                return result
+            except Exception as e:
+                logging.warning(f"Failed to read resource {uri} from {server.name}: {e}")
+                
+        raise RuntimeError(f"Failed to read resource: {uri}")
+
+    async def get_prompt(self, name: str, arguments: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Get a prompt by name with optional arguments.
+        
+        Args:
+            name: The name of the prompt.
+            arguments: Optional arguments for the prompt.
+            
+        Returns:
+            Prompt result including messages.
+            
+        Raises:
+            RuntimeError: If no server has the prompt or execution fails.
+        """
+        for server in self.servers:
+            if server.state != ServerState.CONNECTED:
+                continue
+                
+            try:
+                prompts = await server.session.list_prompts()
+                if any(prompt.name == name for prompt in prompts):
+                    result = await server.session.get_prompt(name, arguments or {})
+                    return result
+            except Exception as e:
+                logging.warning(f"Failed to get prompt {name} from {server.name}: {e}")
+                
+        raise RuntimeError(f"No server found with prompt: {name}")
+    
+    async def display_resources_list(self) -> None:
+        """Display a formatted list of available resources."""
+        async def fetch_and_display():
+            resources = await self.list_resources()
+            
+            if not resources:
+                print("\n  No resources available. Servers may not be connected.")
+                return
+                
+            print("\n===== Available MCP Resources =====")
+            
+            # Group resources by server
+            server_resources = {}
+            
+            if isinstance(resources, list):
+                # 查找键为 'resources' 的元组
+                for item in resources:
+                    if isinstance(item, tuple) and len(item) >= 2 and item[0] == 'resources':
+                        actual_resources = item[1]
+                        
+                        # 处理提取出的 resources
+                        for resource in actual_resources:
+                            # 尝试各种可能的方式获取 server 属性
+                            if hasattr(resource, 'name'):
+                                server_name = resource.name
+                            elif isinstance(resource, dict) and 'server' in resource:
+                                server_name = resource['server']
+                            elif hasattr(resource, 'get'):
+                                server_name = resource.get('server', 'Unknown')
+                            else:
+                                server_name = 'Unknown'
+                            
+                            if server_name not in server_resources:
+                                server_resources[server_name] = []
+                            server_resources[server_name].append(resource)
+                        break  # 找到并处理了 resources，可以退出循环
+                
+                # 如果没有找到特定结构，尝试处理直接的资源列表
+                if not server_resources and resources:
+                    for resource in resources:
+                        # 尝试各种可能的方式获取 server 属性
+                        if hasattr(resource, 'name'):
+                            server_name = resource.name
+                        elif isinstance(resource, dict) and 'server' in resource:
+                            server_name = resource['server']
+                        elif hasattr(resource, 'get'):
+                            server_name = resource.get('server', 'Unknown')
+                        else:
+                            server_name = 'Unknown'
+                        
+                        if server_name not in server_resources:
+                            server_resources[server_name] = []
+                        server_resources[server_name].append(resource)
+            
+            # Display resources by server
+            for server_name, res_list in server_resources.items():
+                print(f"\n{server_name} Server Resources:")
+                for resource in res_list:
+                    if hasattr(resource, 'uri'):
+                        uri = resource.uri
+                        name = resource.name
+                        description = resource.description
+                    else:
+                        uri = resource.get("uri", "Unknown URI") if hasattr(resource, 'get') else "Unknown URI"
+                        name = resource.get("name", "Unnamed Resource") if hasattr(resource, 'get') else "Unnamed Resource"
+                        description = resource.get("description", "No description") if hasattr(resource, 'get') else "No description"
+                    
+                    print(f"  • {name} ({uri})")
+                    print(f"    {description}")
+                    
+            print(f"\nTotal available resources: {len(server_resources)}")
+        
+        await asyncio.create_task(fetch_and_display())
+    async def display_prompts_list(self) -> None:
+        """Display a formatted list of available prompts."""
+        async def fetch_and_display():
+            prompts = await self.list_prompts()
+            
+            if not prompts:
+                print("\n  No prompts available. Servers may not be connected.")
+                return
+                
+            print("\n===== Available MCP Prompts =====")
+            
+            # Group prompts by server
+            server_prompts = {}
+            # for prompt in prompts:
+            #     server_name = prompt.get("server", "Unknown")
+            #     if server_name not in server_prompts:
+            #         server_prompts[server_name] = []
+            #     server_prompts[server_name].append(prompt)
+            
+            if isinstance(prompts, list):
+                # 查找键为 'prompts' 的元组
+                for item in prompts:
+                    if isinstance(item, tuple) and len(item) >= 2 and item[0] == 'prompts':
+                        actual_prompts = item[1]
+                        
+                        # 处理提取出的 prompts
+                        for prompt in actual_prompts:
+                            # 尝试各种可能的方式获取 server 属性
+                            if hasattr(prompt, 'name'):
+                                server_name = prompt.name
+                            elif isinstance(prompt, dict) and 'server' in prompt:
+                                server_name = prompt['server']
+                            elif hasattr(prompt, 'get'):
+                                server_name = prompt.get('server', 'Unknown')
+                            else:
+                                server_name = 'Unknown'
+                            
+                            if server_name not in server_prompts:
+                                server_prompts[server_name] = []
+                            server_prompts[server_name].append(prompt)
+            
+            # Display prompts by server
+            for server_name, prompt_list in server_prompts.items():
+                print(f"\n{server_name} Server Prompts:")
+                for prompt in prompt_list:
+                    name = prompt.name
+                    description = prompt.description
+                    arguments = prompt.arguments
+                    print(f"  • {name}: {description}")
+                    if arguments:
+                        print(f"    Arguments:")
+                        for arg in arguments:
+                            arg_name = arg.name
+                            arg_desc = arg.description
+                            required = " (required)" if arg.required else ""
+                            print(f"      - {arg_name}: {arg_desc}{required}")
+                    
+            print(f"\nTotal available prompts: {len(server_prompts)}")
+        
+        await asyncio.create_task(fetch_and_display())
+
     async def cleanup_servers(self) -> None:
         """Clean up all servers properly."""
         cleanup_tasks = []
@@ -1900,7 +2305,7 @@ class ChatSession:
         await self.llm_client.cleanup()
 
     async def process_llm_response(self, llm_response: str) -> str:
-        """Process the LLM response and execute tools if needed.
+        """Process the LLM response and execute tools, read resources, or get prompts if needed.
         
         Args:
             llm_response: The response from the LLM.
@@ -1920,29 +2325,30 @@ class ChatSession:
                 # Extract the JSON from the markdown
                 json_str = match.group(1)
                 try:
-                    tool_call = json.loads(json_str)
+                    parsed_response = json.loads(json_str)
                 except json.JSONDecodeError:
                     return llm_response
             else:
                 # Try to parse as direct JSON
                 try:
-                    tool_call = json.loads(llm_response)
+                    parsed_response = json.loads(llm_response)
                 except json.JSONDecodeError:
                     return llm_response
                     
-            if "tool" in tool_call and "arguments" in tool_call:
-                tool_name = tool_call['tool']
+            # Handle tool calls
+            if "tool" in parsed_response and "arguments" in parsed_response:
+                tool_name = parsed_response['tool']
                 print(f"\n> Executing tool: {tool_name}")
-                print(f"> With arguments: {json.dumps(tool_call['arguments'], indent=2)}")
-                logging.info(f"Executing tool: {tool_call['tool']}")
-                logging.info(f"With arguments: {tool_call['arguments']}")
+                print(f"> With arguments: {json.dumps(parsed_response['arguments'], indent=2)}")
+                logging.info(f"Executing tool: {parsed_response['tool']}")
+                logging.info(f"With arguments: {parsed_response['arguments']}")
                 
                 # Try to find the tool across all servers
                 for server in self.servers:
                     tools = await server.list_tools()
-                    if any(tool.name == tool_call["tool"] for tool in tools):
+                    if any(tool.name == tool_name for tool in tools):
                         try:
-                            result = await server.execute_tool(tool_call["tool"], tool_call["arguments"])
+                            result = await server.execute_tool(tool_name, parsed_response["arguments"])
                             
                             # Safe handling of progress calculations
                             if isinstance(result, dict) and 'progress' in result and 'total' in result:
@@ -1954,8 +2360,6 @@ class ChatSession:
                                     logging.info(f"Progress: {progress}/{total} ({(progress/total)*100:.1f}%)")
                                 else:
                                     logging.info(f"Progress: {progress}/{total}")
-                                    
-                            # print("Tool: Executing tool:", tool_name)
                             
                             # Format and display the result
                             result_str = str(result)
@@ -1966,7 +2370,7 @@ class ChatSession:
                                 
                             print(f"> Tool execution completed: {tool_name}")
                             
-                            # Existing code for result handling
+                            # Serialize result for LLM
                             serialized_result = self.llm_client.safe_json_serialize(result)
                             return f"Tool execution result: {serialized_result}"
                             
@@ -1979,13 +2383,72 @@ class ChatSession:
                             
                             # Retry the tool execution once more after reconnection
                             try:
-                                result = await server.execute_tool(tool_call["tool"], tool_call["arguments"])
+                                result = await server.execute_tool(tool_name, parsed_response["arguments"])
                                 serialized_result = self.llm_client.safe_json_serialize(result)
                                 return f"Tool execution result: {serialized_result}"
                             except Exception as retry_error:
                                 return f"Error executing tool after reconnection: {str(retry_error)}"
                 
-                return f"No server found with tool: {tool_call['tool']}"
+                return f"No server found with tool: {tool_name}"
+            
+            # Handle resource reads
+            elif "resource" in parsed_response and "uri" in parsed_response["resource"]:
+                resource_uri = parsed_response["resource"]["uri"]
+                print(f"\n> Reading resource: {resource_uri}")
+                logging.info(f"Reading resource: {resource_uri}")
+                
+                try:
+                    resource_result = await self.read_resource(resource_uri)
+                    
+                    # Format and display the result
+                    result_str = str(resource_result)
+                    if len(result_str) > 1000:
+                        print(f"> Resource content (truncated): {result_str[:1000]}...")
+                    else:
+                        print(f"> Resource content: {result_str}")
+                    
+                    print(f"> Resource reading completed: {resource_uri}")
+                    
+                    # Serialize result for LLM
+                    serialized_result = self.llm_client.safe_json_serialize(resource_result)
+                    return f"Resource content: {serialized_result}"
+                    
+                except Exception as e:
+                    error_msg = f"Error reading resource: {str(e)}"
+                    logging.error(error_msg)
+                    return error_msg
+            
+            # Handle prompt execution
+            elif "prompt" in parsed_response and "name" in parsed_response["prompt"]:
+                prompt_name = parsed_response["prompt"]["name"]
+                prompt_arguments = parsed_response["prompt"].get("arguments", {})
+                print(f"\n> Executing prompt: {prompt_name}")
+                if prompt_arguments:
+                    print(f"> With arguments: {json.dumps(prompt_arguments, indent=2)}")
+                logging.info(f"Executing prompt: {prompt_name}")
+                logging.info(f"With arguments: {prompt_arguments}")
+                
+                try:
+                    prompt_result = await self.get_prompt(prompt_name, prompt_arguments)
+                    
+                    # Format and display the result
+                    result_str = str(prompt_result)
+                    if len(result_str) > 1000:
+                        print(f"> Prompt result (truncated): {result_str[:1000]}...")
+                    else:
+                        print(f"> Prompt result: {result_str}")
+                    
+                    print(f"> Prompt execution completed: {prompt_name}")
+                    
+                    # Serialize result for LLM
+                    serialized_result = self.llm_client.safe_json_serialize(prompt_result)
+                    return f"Prompt result: {serialized_result}"
+                    
+                except Exception as e:
+                    error_msg = f"Error executing prompt: {str(e)}"
+                    logging.error(error_msg)
+                    return error_msg
+                    
             return llm_response
         except Exception as e:
             logging.error(f"Error processing LLM response: {e}")
@@ -2191,6 +2654,34 @@ class ChatSession:
             # Initialize LLM client in parallel
             llm_init_task = asyncio.create_task(self.llm_client.initialize())
             
+            server_init_results = []
+            for server in self.servers:
+                try:
+                    success = await server.initialize()
+                    server_init_results.append((server.name, success))
+                except Exception as e:
+                    logging.error(f"Failed to initialize server {server.name}: {e}")
+                    server_init_results.append((server.name, False))
+            try:
+                await self.llm_client.initialize()
+            except Exception as e:
+                logging.error(f"Failed to initialize LLM client: {e}")
+                print(f"\nError initializing LLM client: {e}")
+                print("Continuing with reduced functionality...")    
+                
+            successful_servers = [name for name, success in server_init_results if success]
+            failed_servers = [name for name, success in server_init_results if not success]
+
+            if successful_servers:
+                logging.info(f"Successfully initialized servers: {', '.join(successful_servers)}")
+            else:
+                logging.warning("No servers were successfully initialized!")
+
+            if failed_servers:
+                logging.warning(f"Failed to initialize servers: {', '.join(failed_servers)}")
+                print(f"\nWarning: Some MCP servers failed to initialize: {', '.join(failed_servers)}")
+                print("You can continue with reduced functionality.")
+            
             # Wait for all initializations to complete
             await asyncio.gather(*init_tasks, llm_init_task)
             
@@ -2211,27 +2702,119 @@ class ChatSession:
             
             tools_description = "\n".join([tool.format_for_llm() for tool in all_tools])
             
+            # ---------- RESOURCES ----------
+            # Collect all resources - using the exact same logic as display_resources_list
+            resources = await self.list_resources()
+            all_resources = []
+            
+            if isinstance(resources, list):
+                # Look for tuples with 'resources' as first element
+                for item in resources:
+                    if isinstance(item, tuple) and len(item) >= 2 and item[0] == 'resources':
+                        actual_resources = item[1]
+                        for resource in actual_resources:
+                            all_resources.append(resource)
+                        break  # Found and processed resources, exit the loop
+                
+                # If no specific tuple structure found, try processing as direct resource list
+                if not all_resources and resources:
+                    all_resources = resources
+            
+            logging.info(f"Found {len(all_resources)} resources to include in system message")
+            
+            # Format resources for LLM
+            resources_description = ""
+            if all_resources:
+                resources_description = "Available Resources:\n"
+                for res in all_resources:
+                    if hasattr(res, 'uri'):
+                        uri = res.uri
+                        name = res.name
+                        description = res.description
+                    else:
+                        uri = res.get("uri", "Unknown URI") if hasattr(res, 'get') else "Unknown URI"
+                        name = res.get("name", "Unnamed Resource") if hasattr(res, 'get') else "Unnamed Resource"
+                        description = res.get("description", "No description") if hasattr(res, 'get') else "No description"
+                    
+                    resources_description += f"- {name} ({uri}): {description}\n"
+            
+            # ---------- PROMPTS ----------
+            # Collect all prompts - using the exact same logic as display_prompts_list
+            prompts = await self.list_prompts()
+            all_prompts = []
+            
+            if isinstance(prompts, list):
+                # Look for tuples with 'prompts' as first element
+                for item in prompts:
+                    if isinstance(item, tuple) and len(item) >= 2 and item[0] == 'prompts':
+                        actual_prompts = item[1]
+                        for prompt in actual_prompts:
+                            all_prompts.append(prompt)
+                        break  # Found and processed prompts, exit the loop
+                
+                # If no specific tuple structure found, try processing as direct prompt list
+                if not all_prompts and prompts:
+                    all_prompts = prompts
+            
+            logging.info(f"Found {len(all_prompts)} prompts to include in system message")
+            
+            # Format prompts for LLM
+            prompts_description = ""
+            if all_prompts:
+                prompts_description = "Available Prompts:\n"
+                for prompt in all_prompts:
+                    if hasattr(prompt, 'name'):
+                        name = prompt.name
+                        description = prompt.description
+                        arguments = prompt.arguments
+                    else:
+                        name = prompt.get("name", "Unnamed Prompt") if hasattr(prompt, 'get') else "Unnamed Prompt"
+                        description = prompt.get("description", "No description") if hasattr(prompt, 'get') else "No description"
+                        arguments = prompt.get("arguments", []) if hasattr(prompt, 'get') else []
+                    
+                    prompts_description += f"- {name}: {description}\n"
+                    
+                    # Add arguments if available
+                    if arguments:
+                        prompts_description += f"  Arguments:\n"
+                        for arg in arguments:
+                            if hasattr(arg, 'name'):
+                                arg_name = arg.name
+                                arg_desc = arg.description
+                                required = " (required)" if arg.required else ""
+                            else:
+                                arg_name = arg.get("name", "unknown") if hasattr(arg, 'get') else "unknown"
+                                arg_desc = arg.get("description", "No description") if hasattr(arg, 'get') else "No description"
+                                required = " (required)" if (hasattr(arg, 'get') and arg.get('required')) else ""
+                            
+                            prompts_description += f"    - {arg_name}: {arg_desc}{required}\n"
+            
             system_message = f"""You are a helpful assistant with access to these tools: 
 
-{tools_description}
-Choose the appropriate tool based on the user's question. If no tool is needed, reply directly.
+    {tools_description}
 
-IMPORTANT: When you need to use a tool, you must ONLY respond with the exact JSON object format below, nothing else:
-{{
-    "tool": "tool-name",
-    "arguments": {{
-        "argument-name": "value"
+    {resources_description}
+
+    {prompts_description}
+
+    Choose the appropriate tool based on the user's question. If no tool is needed, reply directly.
+
+    IMPORTANT: When you need to use a tool, you must ONLY respond with the exact JSON object format below, nothing else:
+    {{
+        "tool": "tool-name",
+        "arguments": {{
+            "argument-name": "value"
+        }}
     }}
-}}
 
-After receiving a tool's response:
-1. Transform the raw data into a natural, conversational response
-2. Keep responses concise but informative
-3. Focus on the most relevant information
-4. Use appropriate context from the user's question
-5. Avoid simply repeating the raw data
+    After receiving a tool's response:
+    1. Transform the raw data into a natural, conversational response
+    2. Keep responses concise but informative
+    3. Focus on the most relevant information
+    4. Use appropriate context from the user's question
+    5. Avoid simply repeating the raw data
 
-Please use only the tools that are explicitly defined above."""
+    Please use only the tools that are explicitly defined above."""
 
             messages = [
                 {
@@ -2315,6 +2898,17 @@ Please use only the tools that are explicitly defined above."""
                             print("  No tools available. Servers may not be connected.")
                         print(f"\nTotal available tools: {len(all_tools)}")
                         continue
+                    
+                    # Add support for /resources command
+                    elif user_input.lower() == "/resources":
+                        await self.display_resources_list()
+                        continue
+                            
+                    
+                    # Add support for /prompts command
+                    elif user_input.lower() == "/prompts":
+                        await self.display_prompts_list()
+                        continue
 
                     elif user_input.lower() == "/now":
                         print(f"\nCurrent LLM: {self.llm_client.provider.upper()} - {self.llm_client.model}")
@@ -2327,8 +2921,10 @@ Please use only the tools that are explicitly defined above."""
                         print("  /llm                      - Show available LLM providers and models")
                         print("  /switch <provider> <model> - Switch to a different LLM")
                         print("  /refresh                  - Refresh model lists for all providers")
-                        print("  /tools                    - Show available MCP tools")  # New command
-                        print("  /now                      - Show current LLM details")  # New command
+                        print("  /tools                    - Show available MCP tools")
+                        print("  /resources                - Show available MCP resources")  
+                        print("  /prompts                  - Show available MCP prompts")    
+                        print("  /now                      - Show current LLM details")
                         print("  /help                     - Show this help message")
                         print("  quit or exit              - Exit the chat")
                         continue
