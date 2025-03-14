@@ -106,6 +106,8 @@ Once the chat is running, you can use these commands:
   - Example: `/switch openai gpt-4o`
 - `/refresh` - Refresh the list of available models
 - `/tools` - Show available MCP tools
+- `/resources` - Show available MCP resources
+- `/prompts` - Show available MCP prompts
 - `/now` - Show current LLM details and token usage
 - `/help` - Display help information
 - `quit` or `exit` - Exit the chat
