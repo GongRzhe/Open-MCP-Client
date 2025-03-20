@@ -2,132 +2,34 @@
 <html>
 <head>
     <title>ChatMCP Web Interface</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .container {
-            display: flex;
-            gap: 20px;
-        }
-        .chat-container {
-            flex: 2;
-        }
-        .sidebar {
-            flex: 1;
-        }
-        .chat-messages {
-            height: 500px;
-            border: 1px solid #ccc;
-            padding: 10px;
-            overflow-y: auto;
-            margin-bottom: 10px;
-            background-color: #f9f9f9;
-        }
-        .message {
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        .user-message {
-            background-color: #dcf8c6;
-            margin-left: 20px;
-        }
-        .assistant-message {
-            background-color: #f1f0f0;
-            margin-right: 20px;
-        }
-        .input-container {
-            display: flex;
-            margin-bottom: 10px;
-        }
-        input, select, button {
-            padding: 10px;
-            margin: 5px 0;
-        }
-        input[type="text"] {
-            flex: 1;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .status {
-            margin-bottom: 10px;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-left: 3px solid #4CAF50;
-        }
-        .accordion {
-            margin-bottom: 10px;
-        }
-        .accordion-header {
-            background-color: #f1f1f1;
-            padding: 10px;
-            cursor: pointer;
-        }
-        .accordion-content {
-            padding: 10px;
-            display: none;
-            border: 1px solid #f1f1f1;
-        }
-        .visible {
-            display: block;
-        }
-        pre {
-            white-space: pre-wrap;
-            background-color: #f5f5f5;
-            padding: 10px;
-            overflow-x: auto;
-        }
-        .loading {
-            text-align: center;
-            padding: 20px;
-            display: none;
-        }
-        .loading.active {
-            display: block;
-        }
-        .tool-result {
-            background-color: #e9f7fe;
-            padding: 10px;
-            margin: 10px 0;
-            border-left: 3px solid #2196F3;
-            display: none;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
-    <h1>ChatMCP Web Interface</h1>
+    <header>
+        <h1>ChatMCP Web Interface</h1>
+    </header>
     
     <div class="container">
-        <div class="chat-container">
+        <main class="chat-container">
             <div class="status" id="tool-status">Status: Ready</div>
             <div class="chat-messages" id="chat-messages"></div>
             <div class="input-container">
                 <input type="text" id="user-input" placeholder="Type your message here...">
                 <button id="send-btn">Send</button>
             </div>
-            <button id="check-response">Check for Response</button>
+            <button id="check-response" class="subtle-button">Check for Response</button>
             <div class="tool-result" id="tool-result">
                 <h3>Tool Output:</h3>
                 <pre id="tool-output"></pre>
             </div>
-        </div>
+        </main>
         
-        <div class="sidebar">
+        <aside class="sidebar">
             <div class="accordion">
                 <div class="accordion-header" onclick="toggleAccordion('current-llm')">Current LLM</div>
-                <div class="accordion-content visible" id="current-llm">
-                    <p id="current-provider-model">Provider: OPENROUTE<br>Model: google/gemma-3-27b-it:free</p>
+                <div class="accordion-content" id="current-llm">
+                    <p id="current-provider-model">Provider: Loading...<br>Model: Loading...</p>
                     <pre id="token-usage">No tokens used yet</pre>
                     <button id="refresh-status">Refresh Status</button>
                 </div>
@@ -159,314 +61,33 @@
                     </div>
                 </div>
             </div>
-        </div>
+            
+            <div class="accordion">
+                <div class="accordion-header" onclick="toggleAccordion('help-section')">Help</div>
+                <div class="accordion-content" id="help-section">
+                    <h3>Commands</h3>
+                    <ul>
+                        <li><strong>/switch [provider] [model]</strong> - Switch LLM provider and model</li>
+                        <li><strong>/refresh</strong> - Refresh all models</li>
+                        <li><strong>/clear</strong> - Clear chat history</li>
+                        <li><strong>/help</strong> - Show help information</li>
+                    </ul>
+                    <h3>Tips</h3>
+                    <ul>
+                        <li>Use tools section to see available capabilities</li>
+                        <li>For search, try <code>brave_web_search</code></li>
+                        <li>For GitHub integration, use <code>github</code> tools</li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
     </div>
     
     <div class="loading" id="loading">Processing...</div>
     
-    <script>
-        // Toggle accordion sections
-        function toggleAccordion(id) {
-            const content = document.getElementById(id);
-            content.classList.toggle('visible');
-        }
-        
-        // Show the loading indicator
-        function showLoading() {
-            document.getElementById('loading').classList.add('active');
-        }
-        
-        // Hide the loading indicator
-        function hideLoading() {
-            document.getElementById('loading').classList.remove('active');
-        }
-        
-        // Add a message to the chat
-        function addMessage(content, isUser) {
-            const messagesDiv = document.getElementById('chat-messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add('message');
-            messageDiv.classList.add(isUser ? 'user-message' : 'assistant-message');
-            messageDiv.innerHTML = `<p><strong>${isUser ? 'You' : 'Assistant'}:</strong> ${content}</p>`;
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-        
-        // Check for response
-        function checkForResponse() {
-            fetch('/api/check-response')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.has_response) {
-                        // Update chat with response
-                        addMessage(data.message, false);
-                        
-                        // Show tool result if available
-                        if (data.tool_result) {
-                            document.getElementById('tool-output').textContent = data.tool_result;
-                            document.getElementById('tool-result').style.display = 'block';
-                        }
-                        
-                        // Update token usage
-                        document.getElementById('token-usage').textContent = JSON.stringify(data.token_usage, null, 2);
-                    }
-                })
-                .finally(() => {
-                    hideLoading();
-                });
-        }
-        
-        // Submit a message
-        function submitMessage() {
-            const input = document.getElementById('user-input');
-            const message = input.value.trim();
-            
-            if (message) {
-                showLoading();
-                addMessage(message, true);
-                input.value = '';
-                
-                fetch('/api/send-message', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ message })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        // Start checking for a response
-                        setTimeout(checkForResponse, 1000);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    hideLoading();
-                });
-            }
-        }
-        
-        // Fetch providers
-        function fetchProviders() {
-            fetch('/api/get-providers')
-                .then(response => response.json())
-                .then(data => {
-                    const dropdown = document.getElementById('provider-dropdown');
-                    dropdown.innerHTML = '<option value="">Select a provider</option>';
-                    
-                    data.providers.forEach(provider => {
-                        const option = document.createElement('option');
-                        option.value = provider;
-                        option.textContent = provider;
-                        dropdown.appendChild(option);
-                    });
-                });
-        }
-        
-        // Fetch models for selected provider
-        function fetchModels() {
-            const provider = document.getElementById('provider-dropdown').value;
-            if (!provider) return;
-            
-            fetch(`/api/get-models?provider=${encodeURIComponent(provider)}`)
-                .then(response => response.json())
-                .then(data => {
-                    const dropdown = document.getElementById('model-dropdown');
-                    dropdown.innerHTML = '<option value="">Select a model</option>';
-                    
-                    data.models.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model;
-                        option.textContent = model;
-                        dropdown.appendChild(option);
-                    });
-                });
-        }
-        
-        // Switch provider and model
-        function switchProviderModel() {
-            const provider = document.getElementById('provider-dropdown').value;
-            const model = document.getElementById('model-dropdown').value;
-            
-            if (!provider || !model) {
-                document.getElementById('switch-status').textContent = 'Please select both provider and model';
-                return;
-            }
-            
-            showLoading();
-            document.getElementById('switch-status').textContent = 'Switching...';
-            
-            fetch('/api/switch', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ provider, model })
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('switch-status').textContent = data.message;
-                document.getElementById('current-provider-model').innerHTML = 
-                    `Provider: ${data.current_provider.toUpperCase()}<br>Model: ${data.current_model}`;
-            })
-            .finally(() => {
-                hideLoading();
-            });
-        }
-        
-        // Refresh all models
-        function refreshModels() {
-            showLoading();
-            document.getElementById('switch-status').textContent = 'Refreshing models...';
-            
-            fetch('/api/refresh-models')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('switch-status').textContent = data.message;
-                    fetchProviders();
-                })
-                .finally(() => {
-                    hideLoading();
-                });
-        }
-        
-        // Refresh status
-        function refreshStatus() {
-            fetch('/api/get-status')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('tool-status').textContent = 'Status: ' + data.status;
-                    document.getElementById('token-usage').textContent = JSON.stringify(data.token_usage, null, 2);
-                    document.getElementById('current-provider-model').innerHTML = 
-                        `Provider: ${data.current_provider.toUpperCase()}<br>Model: ${data.current_model}`;
-                });
-        }
-        
-        // Refresh metadata
-        function refreshMetadata() {
-            fetch('/api/get-metadata')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('metadata-content').innerHTML = data.content;
-                });
-        }
-        
-        // Event listeners
-        document.addEventListener('DOMContentLoaded', function() {
-            // Chat
-            document.getElementById('send-btn').addEventListener('click', submitMessage);
-            document.getElementById('user-input').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    submitMessage();
-                }
-            });
-            document.getElementById('check-response').addEventListener('click', checkForResponse);
-            
-            // LLM switching
-            document.getElementById('fetch-providers-btn').addEventListener('click', fetchProviders);
-            document.getElementById('fetch-models-btn').addEventListener('click', fetchModels);
-            document.getElementById('switch-btn').addEventListener('click', switchProviderModel);
-            document.getElementById('refresh-btn').addEventListener('click', refreshModels);
-            
-            // Status and metadata
-            document.getElementById('refresh-status').addEventListener('click', refreshStatus);
-            document.getElementById('refresh-metadata-btn').addEventListener('click', refreshMetadata);
-            
-            // Initial refresh
-            refreshStatus();
-        });
-    </script>
-    <script>
-        // Check if we need to run the metadata fix
-        if (localStorage.getItem('runMetadataFix') === 'true') {
-            localStorage.removeItem('runMetadataFix');
-            
-            // Get the saved metadata content
-            const metadataContent = localStorage.getItem('metadataContent');
-            if (metadataContent) {
-                document.getElementById('metadata-content').innerHTML = metadataContent;
-                localStorage.removeItem('metadataContent');
-                console.log('Applied metadata fix');
-            }
-            
-            // Also trigger a normal refresh
-            document.getElementById('refresh-metadata-btn').click();
-        }
-    </script>
-    <script>
-        // Auto-refresh functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            // Variables to control refresh rates
-            const STATUS_REFRESH_INTERVAL = 3000;  // 3 seconds
-            const RESPONSE_CHECK_INTERVAL = 2000;  // 2 seconds
-            
-            // Flag to track if we're waiting for a response
-            let waitingForResponse = false;
-            
-            // Function to check for pending responses
-            function autoCheckResponse() {
-                // Only check if we're waiting for a response
-                if (waitingForResponse) {
-                    console.log('Auto-checking for response...');
-                    document.getElementById('check-response').click();
-                }
-            }
-            
-            // Function to refresh status
-            function autoRefreshStatus() {
-                console.log('Auto-refreshing status...');
-                document.getElementById('refresh-status').click();
-            }
-            
-            // Set up the intervals
-            setInterval(autoRefreshStatus, STATUS_REFRESH_INTERVAL);
-            setInterval(autoCheckResponse, RESPONSE_CHECK_INTERVAL);
-            
-            // Override the send button to set the waiting flag
-            const originalSubmitMessage = submitMessage;
-            submitMessage = function() {
-                // Call the original function
-                originalSubmitMessage();
-                
-                // Set the flag to start checking for responses
-                waitingForResponse = true;
-                
-                // Schedule a check right away
-                setTimeout(autoCheckResponse, 500);
-            };
-            
-            // Also override checkForResponse to clear the flag when a response is received
-            const originalCheckForResponse = checkForResponse;
-            checkForResponse = function() {
-                // Call the original function
-                fetch('/api/check-response')
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.has_response) {
-                            // Response received, clear the waiting flag
-                            waitingForResponse = false;
-                            
-                            // Update chat with response
-                            addMessage(data.message, false);
-                            
-                            // Show tool result if available
-                            if (data.tool_result) {
-                                document.getElementById('tool-output').textContent = data.tool_result;
-                                document.getElementById('tool-result').style.display = 'block';
-                            }
-                            
-                            // Update token usage
-                            document.getElementById('token-usage').textContent = JSON.stringify(data.token_usage, null, 2);
-                        }
-                    })
-                    .finally(() => {
-                        hideLoading();
-                    });
-            };
-            
-            console.log('Auto-refresh functionality initialized');
-        });
-    </script>
+    <!-- Load JavaScript -->
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 </body>
 </html>

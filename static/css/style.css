@@ -1,0 +1,272 @@
+/* Base styles */
+:root {
+    --primary-color: #4CAF50;
+    --primary-hover: #45a049;
+    --secondary-color: #2196F3;
+    --light-gray: #f5f5f5;
+    --border-color: #ccc;
+    --text-color: #333;
+    --assistant-bg: #f1f0f0;
+    --user-bg: #dcf8c6;
+    --accent-color: #ff9800;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+header {
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+h1, h2, h3, h4 {
+    color: #333;
+}
+
+/* Layout */
+.container {
+    display: flex;
+    gap: 20px;
+}
+
+.chat-container {
+    flex: 2;
+    min-width: 0; /* Prevent flex items from overflow */
+}
+
+.sidebar {
+    flex: 1;
+    min-width: 250px;
+}
+
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+    
+    .chat-container, .sidebar {
+        width: 100%;
+    }
+}
+
+/* Chat elements */
+.chat-messages {
+    height: 500px;
+    border: 1px solid var(--border-color);
+    padding: 10px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    background-color: #f9f9f9;
+    border-radius: 8px;
+}
+
+.message {
+    margin-bottom: 10px;
+    padding: 10px;
+    border-radius: 8px;
+    max-width: 85%;
+    word-wrap: break-word;
+}
+
+.user-message {
+    background-color: var(--user-bg);
+    margin-left: auto;
+    margin-right: 10px;
+    border-bottom-right-radius: 2px;
+}
+
+.assistant-message {
+    background-color: var(--assistant-bg);
+    margin-right: auto;
+    margin-left: 10px;
+    border-bottom-left-radius: 2px;
+}
+
+/* Input area */
+.input-container {
+    display: flex;
+    margin-bottom: 10px;
+}
+
+input, select, button {
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+input[type="text"] {
+    flex: 1;
+    min-width: 0; /* Allow shrinking below min-content width */
+}
+
+button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: var(--primary-hover);
+}
+
+/* Status indicators */
+.status {
+    margin-bottom: 10px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-left: 3px solid var(--primary-color);
+    border-radius: 4px;
+}
+
+/* Accordion components */
+.accordion {
+    margin-bottom: 15px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.accordion-header {
+    background-color: #f1f1f1;
+    padding: 10px 15px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: bold;
+    transition: background-color 0.3s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.accordion-header:after {
+    content: "+";
+    float: right;
+    font-weight: bold;
+}
+
+.accordion-header:hover {
+    background-color: #e5e5e5;
+}
+
+.accordion-content {
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    background-color: white;
+}
+
+.accordion-content.visible {
+    padding: 15px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Code and pre formatting */
+pre, code {
+    white-space: pre-wrap;
+    background-color: var(--light-gray);
+    padding: 10px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 14px;
+    overflow-x: auto;
+}
+
+code {
+    padding: 2px 4px;
+    color: #d63384;
+}
+
+/* Loading indicator */
+.loading {
+    text-align: center;
+    padding: 20px;
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    border-radius: 4px;
+    z-index: 1000;
+}
+
+.loading.active {
+    display: block;
+}
+
+/* Tool result area */
+.tool-result {
+    background-color: #e9f7fe;
+    padding: 15px;
+    margin: 15px 0;
+    border-left: 3px solid var(--secondary-color);
+    border-radius: 4px;
+    display: none;
+}
+
+.tool-result h3 {
+    margin-top: 0;
+    color: var(--secondary-color);
+}
+
+.tool-result pre {
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: #f8f8f8;
+    border: 1px solid #ddd;
+}
+
+/* Subtle buttons */
+.subtle-button {
+    background-color: #f1f1f1;
+    color: #555;
+    border: 1px solid #ddd;
+}
+
+.subtle-button:hover {
+    background-color: #e5e5e5;
+    color: #333;
+}
+
+/* Provider health indicators */
+.provider-healthy {
+    color: var(--primary-color);
+    font-weight: bold;
+}
+
+.provider-unhealthy {
+    color: #f44336;
+    font-weight: bold;
+}
+
+/* Scrollbar customization */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
