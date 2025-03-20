@@ -1,16 +1,22 @@
-# Open-MCP-Client - Multi-Provider LLM Chat Client with Tool Integration
+# Open-MCP-Client - Multi-Provider LLM Chat with Model Context Protocol
 
-Open-MCP-Client is a powerful command-line chat interface that connects to multiple LLM providers (OpenAI, Anthropic, Groq, etc.) and extends their capabilities with tools using the Model Context Protocol (MCP).
+Open-MCP-Client is a powerful, flexible chatbot framework that connects to multiple LLM providers (OpenAI, Anthropic, Groq, etc.) and extends their capabilities with tools using the Model Context Protocol (MCP). Use it to create AI assistants that can perform real actions like searching the web, interacting with GitHub, browsing websites, and more.
+
+## Demo
+
+![Flask](./static/demo.gif)
 
 ## Features
 
 - 🔄 **Multiple LLM Provider Support**: Seamlessly switch between OpenAI, Anthropic, Groq, Gemini, Ollama, and OpenRoute
-- 🧰 **Integrated Tools**: Search the web, manage GitHub repositories, browse websites, and more through MCP servers
-- 🔁 **Resilient Design**: Built with circuit breakers, automatic retries, health checks, and graceful degradation
+- 🌐 **Multiple Interface Options**: Choose between command-line (ChatMCP.py) or web interface (FlaskMCP.py)
+- 🧰 **Extensible Tool Ecosystem**: Connect to web search, GitHub, Gmail, web browsing, and more through MCP servers
+- 🛠️ **Easily Add Custom Tools**: Integrate your own MCP-compatible tools and servers
+- 🔁 **Enterprise-Grade Reliability**: Built with circuit breakers, automatic retries, health checks, and graceful degradation
 - ⚡ **Asynchronous Architecture**: Efficiently handles multiple connections and operations concurrently
-- 🔍 **Token Tracking**: Monitors token usage across different providers
+- 🔍 **Token Management**: Monitors token usage across different providers
 - 📊 **Performance Metrics**: Reports response times and token counts for each interaction
-- 📝 **Comprehensive Logging**: Detailed activity logging for debugging and monitoring
+- 📝 **Comprehensive Logging**: Detailed activity tracking for debugging and monitoring
 
 ## Getting Started
 
@@ -18,6 +24,7 @@ Open-MCP-Client is a powerful command-line chat interface that connects to multi
 
 - Python 3.8+
 - API keys for the LLM providers you want to use
+- Node.js (for running NPM-based MCP servers)
 
 ### Installation
 
@@ -32,20 +39,12 @@ Open-MCP-Client is a powerful command-line chat interface that connects to multi
    pip install -r requirements.txt
    ```
 
-3. Copy the example environment file and add your API keys:
+3. Create an environment file with your API keys:
    ```bash
-   cp .env.example .env
-   # Edit .env with your API keys
+   touch .env
    ```
-
-4. Copy the example servers_config file and add your mcp servers:
-   ```bash
-   cp servers_config.json.example servers_config.json
-   ```
-
-### Configuration
-
-1. **Environment Variables**: Edit the `.env` file with your API keys and preferences:
+   
+   Add your API keys and configuration:
    ```
    # LLM API Keys
    ANTHROPIC_API_KEY=your_anthropic_key
@@ -53,19 +52,35 @@ Open-MCP-Client is a powerful command-line chat interface that connects to multi
    OPENROUTE_API_KEY=your_openroute_key
    GEMINI_API_KEY=your_gemini_key
    GROQ_API_KEY=your_groq_key
+   GITHUB_API_KEY=your_github_token
    
    # Ollama settings (if using local Ollama)
    OLLAMA_HOST=http://localhost:11434
    
-   # Default provider and model configuration
+   # Default provider and model
    DEFAULT_LLM_PROVIDER=groq
    DEFAULT_LLM_MODEL=llama-3.2-90b-vision-preview
+   
+   # Advanced settings (optional)
+   CONNECTION_TIMEOUT=10
+   READ_TIMEOUT=60
+   MAX_RETRIES=3
+   RETRY_DELAY_BASE=1.0
+   RETRY_MAX_DELAY=30.0
+   MESSAGE_HISTORY_LIMIT=20
    ```
 
-2. **Server Configuration**: Review and modify `servers_config.json` to configure the MCP servers:
+4. Configure your MCP servers in `servers_config.json`:
    ```json
    {
      "mcpServers": {
+       "brave-search": {
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+         "env": {
+           "BRAVE_API_KEY": "your_brave_api_key"
+         }
+       },
        "github": {
          "command": "npx",
          "args": ["-y", "@modelcontextprotocol/server-github"],
@@ -73,33 +88,37 @@ Open-MCP-Client is a powerful command-line chat interface that connects to multi
            "GITHUB_PERSONAL_ACCESS_TOKEN": "your_github_token"
          }
        },
-       "brave-search": {
+       "fetch": {
+         "command": "uvx",
+         "args": ["mcp-server-fetch"]
+       },
+       "puppeteer": {
          "command": "npx",
-         "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-         "env": {
-           "BRAVE_API_KEY": "your_brave_api_key"
-         },
-         "disabled": false,
-         "autoApprove": []
+         "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+       },
+       "memory": {
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-memory"]
+       },
+       "gmail": {
+         "command": "npx",
+         "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"]
        }
-       // ... other servers
      }
    }
    ```
 
 ## Usage
 
-### Starting the Chat
+### Command Line Interface
 
-Run the application with:
+Run the CLI version with:
 
 ```bash
 python ChatMCP.py
 ```
 
-### Chat Commands
-
-Once the chat is running, you can use these commands:
+#### Chat Commands
 
 - `/llm` - Display available LLM providers and models
 - `/switch <provider> <model>` - Switch to a different LLM provider and model
@@ -129,6 +148,26 @@ Based on the latest information, New York is currently experiencing temperatures
 [Model: openai/gpt-4o] [Tokens: 145 in, 98 out, 243 total] [Time: 1.45s]
 ```
 
+### Web Interface
+
+Run the web interface with:
+
+```bash
+python FlaskMCP.py
+```
+
+Then open your browser to `http://localhost:5000`
+
+The web interface provides:
+- Chat interface with the LLM
+- Tool result visualization
+- LLM provider/model switching
+- Token usage statistics
+- Tool and resource browser
+
+If the interface appears to be stuck during initialization, use the "Force Open Interface" button, or navigate to `/force-start` to bypass initialization checks.
+
+
 ## Architecture
 
 ChatMCP is built with a robust, asyncio-based architecture for high performance and reliability:
@@ -147,64 +186,3 @@ ChatMCP is built with a robust, asyncio-based architecture for high performance 
 - Google Gemini
 - OpenRoute (proxy for various models)
 - Ollama (local models)
-
-## Available Tools
-
-Depending on your configuration, ChatMCP can provide tools for:
-
-- Web search (via Brave Search)
-- GitHub integration (repository management, file operations)
-- Web browsing and scraping (via Puppeteer)
-- Gmail integration
-- File fetching and processing
-- Memory persistence
-
-## Troubleshooting
-
-### Connection Issues
-
-If you encounter connection problems with LLM providers:
-
-1. Check your API keys in the `.env` file
-2. Verify your internet connection
-3. See if the provider's service is operational
-4. Check the logs in `chatbot.log`
-
-### Server Startup Problems
-
-If MCP servers fail to start:
-
-1. Ensure you have Node.js installed (required for npx commands)
-2. Check if the required NPM packages are accessible
-3. Verify any required API keys are properly set in the config
-4. Check for conflicts with other services on the same ports
-
-## Advanced Configuration
-
-### Modifying Timeouts and Retries
-
-You can add these settings to your `.env` file:
-
-```
-CONNECTION_TIMEOUT=10
-READ_TIMEOUT=60
-MAX_RETRIES=3
-RETRY_DELAY_BASE=1.0
-RETRY_MAX_DELAY=30.0
-```
-
-### Message History Limit
-
-Control conversation length to manage token usage:
-
-```
-MESSAGE_HISTORY_LIMIT=20
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit pull requests or open issues to improve the application.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
